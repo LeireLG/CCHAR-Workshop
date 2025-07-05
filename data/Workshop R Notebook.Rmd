@@ -1,0 +1,502 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+<div style="text-align: center;">
+  <h1 style="font-size: 44px; color: green; font-weight: bold; margin-bottom: 0;">
+    Greenness Exposure Assessment in Environmental Health Research
+  </h1>
+  <p style="font-size: 20px; margin-top: 0;">Amman, July 5th 2025</p>
+</div>
+
+<div style="text-align: center;">
+  <h1 style="font-size: 20px; margin-bottom: 0;">
+    Leire Luque García
+  </h1>
+  <p style="font-size: 20px; margin-top: 0;">
+    University of California San Diego
+  </p>
+</div>
+
+
+[**EXERCISE 1:** Mitigation pathway]{style="font-size:24px; text-decoration:underline;color:green;"}
+
+In this exercise, we explore how different greenness metrics influence health through the mitigation pathway. As has already been noted, the mitigation pathway influences human health by reducing environmental stressors, including air pollution, heat, and noise, through the presence of surrounding vegetation.
+
+**DESCRIPTION**
+
+We conducted a prospective study involving 6,243 adult participants monitored during the warm season (May to September), to investigate the potential influence of mean daytime temperature on heart rate, and whether this association is modified by surrounding vegetation. Each participant was equipped with a validated wearable device capable of continuously recording daytime heart rates. NDVI and tree cover (%) were estimated at the residential level using remote sensing data aggregated within a 500-meter buffer surrounding each participant’s home address. In this analysis, NDVI and tree cover are treated as potential effect modifiers of the association between ambient daytime temperature and physiological stress, as reflected by heart rate.
+
+```{r}
+install.packages("readr")
+install.packages("dplyr")
+install.packages("data.table")
+install.packages("ggplot2")
+install.packages("skimr")
+install.packages("patchwork")
+install.packages("broom")
+install.packages("ggeffects")
+```
+We will start installing the required packages.
+
+```{r}
+library(readr)
+Mitigation <- read_csv("Mitigation.csv")
+```
+Next, load the synthetic dataset titled "Mitigation.csv".
+
+```{r}
+str(Mitigation)
+```
+Examine the structure of the dataset. The "Mitigation" dataset simulates data for 6,243 adult participants with the following variables:
+
+-   **id**: Indentification number
+-   **mean_temp**: Average daytime temperature (°C)
+-   **ndvi**: Normalized Difference Vegetation Index (NDVI) within a 500-m buffer of the residence
+-   **tree_cover**: Percentage of tree cover within a 500-m buffer of the residence
+-   **mean_hr**: Average daytime heart rate (beats per minute)
+-   **sex**: Sex (Female or Male)
+-   **age**: Age (years)
+-   **ses**: Socioeconomic status (I (highest) to V (lowest))
+
+```{r}
+Mitigation$sex <- factor(Mitigation$sex, labels = c("Female", "Male"))
+Mitigation$ses <- factor(Mitigation$ses, labels = c("I", "II", "III", "IV", "V"))
+```
+Recode categorical variables in the "Mitigation" dataset as factor.
+
+```{r}
+library(skimr)
+```
+Obtain descriptive statistics for the exposure and outcome variables in the "Mitigation" dataset using "skimr".
+
+```{r}
+skim(Mitigation[, c("mean_temp", "ndvi", "tree_cover", "mean_hr")])
+```
+Check the distribution of the exposure and outcome variables. 
+
+```{r} 
+
+Mitigation$ndvi_tertile <- cut(Mitigation$ndvi,
+                           breaks = quantile(Mitigation$ndvi, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+                           include.lowest = TRUE,
+                           labels = c("Low", "Medium", "High"))
+
+Mitigation$tc_tertile <- cut(Mitigation$tree_cover,
+                         breaks = quantile(Mitigation$tree_cover, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+                         include.lowest = TRUE,
+                         labels = c("Low", "Medium", "High"))
+
+```
+Create tertiles for NDVI and tree cover.
+
+```{r}
+Mitigation$ndvi_tertile <- factor(Mitigation$ndvi_tertile, levels = c("Low", "Medium", "High"))
+Mitigation$tc_tertile <- factor(Mitigation$tc_tertile, levels = c("Low", "Medium", "High"))
+```
+Recode as factors.
+
+```{r}
+model_mitigation <- lm(mean_hr ~ mean_temp + sex + age + ses, data = Mitigation)
+```
+This linear regression model assesses the association between mean daytime temperture (ºC) and mean heart rate (bpm), adjusting for sex, age, and socioeconomic status (SES). 
+
+```{r}
+summary(model_mitigation)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A 1°C increase in mean daytime temperature is associated with a 0.96 bpm increase in mean heart rate, adjusting for sex, age, and socioeconomic status (SES). For example, a 5°C increase would correspond to an approximate 4.8 bpm increase in heart rate. The model explains approximately 6.8% of the variance in heart rate. The residual standard error is 11.56, suggesting that predicted heart rate values deviate on average by around ±12 bpm from observed values. Overall, the model is statistically significant (p &lt; 0.001).
+</div>
+
+Now we will assess effect modification across tertiles.
+
+```{r}
+library(ggeffects)
+```
+Load the "ggeffects" package to extract predicted (marginal) effects from regression models, including models with interaction terms. These predictions are adjusted for any confounders included in the model.
+
+```{r}
+model_ndvi_interaction <- lm(mean_hr ~ mean_temp * ndvi_tertile + sex + age + ses, data = Mitigation)
+model_tc_interaction <- lm(mean_hr ~ mean_temp * tc_tertile + sex + age + ses, data = Mitigation)
+```
+Fit linear regression models with an interaction term.
+
+```{r}
+pred_ndvi <- ggpredict(model_ndvi_interaction, terms = c("mean_temp", "ndvi_tertile"))
+pred_tc <- ggpredict(model_tc_interaction, terms = c("mean_temp", "tc_tertile"))
+```
+This function calculates model-predicted heart rates across a range of temperature values, separately for each tertile.
+
+```{r}
+
+library(patchwork)
+
+plot_ndvi <- plot(pred_ndvi) +
+  labs(
+    title = "Effect Modification by NDVI",
+    x = "Mean Daytime Temperature (°C)",
+    y = "Predicted Mean Heart Rate (bpm)",
+    color = "NDVI"
+  ) +
+  theme_minimal()
+
+plot_tc <- plot(pred_tc) +
+  labs(
+    title = "Effect Modification by Tree Cover",
+    x = "Mean Daytime Temperature (°C)",
+    y = "Predicted Mean Heart Rate (bpm)",
+    color = "Tree Cover"
+  ) +
+  theme_minimal()
+
+plot_ndvi + plot_tc
+
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br>
+The plots illustrate that the association between mean daytime temperature and heart rate is modified by surrounding vegetation. In both the NDVI and tree cover models, higher vegetation levels are associated with a progressively weaker temperature–heart rate relationship across tertiles. This pattern suggests that increased vegetation may attenuate the physiological response to heat exposure.
+
+However, such attenuation is more pronounced in the case of tree cover. In areas with high tree cover, the slope is almost flat, indicating substantial mitigation of heat effects. In contrast, the mitigation observed for high NDVI is more modest. These results suggest that, although both metrics provide some protection, tree cover is more effective in mitigating the physiological impacts of heat. 
+
+
+</div>
+
+[**EXERCISE 2:** Restoration pathway]{style="font-size:24px; text-decoration:underline;color:green;"}
+
+This exercise examines how different greenness metrics influence health through the restoration pathway. The restoration pathway describes how exposure to greenness improves health through two major theories: the **Attention Restoration Theory (ART)** and the **Stress Reduction Theory (SRT)**. The SRT and ART are interconnected, grounded in biophilic principles, emphasizing the innate human connection to nature. According to the biophilia hypothesis, humans have an evolutionary tendency to seek connections with other forms of life (Wilson, 1986).
+
+**DESCRIPTION**
+
+In this exercise, you will analyze generated data from 5,000 participants to examine how greenness exposure relates to physiological stress, measured through cortisol levels. Greenness is assessed using NDVI within a 500-meter buffer around the home, while weekly time spent in green spaces (minutes) is objectively measured using individual tracking devices.
+
+```{r}
+Restoration <- read_csv("Restoration.csv")
+```
+Load the synthetic dataset titled "Restoration.csv".
+
+```{r}
+str(Restoration)
+```
+Examine the structure of the dataset. The "Restoration" dataset simulates data for 5,000 adult participants with the following variables:
+
+-   **id**: Indentification number
+-   **ndvi**: Normalized Difference Vegetation Index (NDVI) within a 500-m buffer of the residence
+-   **green_minutes**: Mean weekly time spent in green spaces (minutes)
+-   **cortisol**: Hair cortisol measures (pg/mg)
+-   **sex**: Sex (Female or Male)
+-   **age**: Age (years)
+-   **ses**: Socioeconomic status, (I (highest) to V (lowest))
+
+
+```{r}
+Restoration$sex <- factor(Restoration$sex, labels = c("Female", "Male"))
+Restoration$ses <- factor(Restoration$ses, labels = c("I", "II", "III", "IV", "V"))
+```
+Recode categorical variables in the "Restoration" dataset as factor.
+
+```{r}
+skim(Restoration[, c("ndvi", "green_minutes", "cortisol")])
+```
+Check the distribution of the exposure and outcome variables. 
+
+```{r}
+model_ndvi <- lm(cortisol ~ ndvi + sex + age + ses, data = Restoration)
+```
+Fit a linear regression model to examine the relationship between NDVI (exposure) and hair cortisol levels (outcome), adjusting for potential confounders (sex, age, ses). 
+
+```{r}
+summary(model_ndvi)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A 1-unit increase in NDVI (from 0 to 1) is associated with a 23.5-unit decrease in hair cortisol, adjusting for other variables. This is difficult to interpret. 
+Using the IQR instead, allows to interpret the effect of NDVI in terms of a typical, realistic change in exposure, making the results clearer.
+</div>
+
+
+```{r}
+iqr_ndvi <- IQR(Restoration$ndvi)
+Restoration$ndvi_iqr <- Restoration$ndvi/iqr_ndvi
+model_ndvi_iqr <- lm(cortisol ~ ndvi_iqr + sex + age + ses, data = Restoration)
+```
+Standarize NDVI dividing it by its IQR to make the effect size more interpretable, then model its association with hair cortisol, adjusting for key covariates.
+
+```{r}
+summary(model_ndvi_iqr)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A 1 IQR increase in NDVI is associated with a 4.31 pg/mg decrease in cortisol, adjusting for sex, age, and SES. The model explains 6.4% of the variance in hair cortisol levels. The residual standard error of 25.29 is relatively high, meaning that predictions from the model often deviate substantially from actual hair cortisol values. Overall, the model is statistically significant (p < 0.001).
+</div>
+
+```{r}
+model_time <- lm(cortisol ~ green_minutes + ses + age + sex, data = Restoration)
+```
+Fit a linear regression model to examine the relationship between hair cortisol levels (outcome) and mean weekly time spent in green spaces (exposure), adjusting for potential confounders. 
+
+```{r}
+summary(model_time)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br>
+A 1-minute increase in the mean weekly time spent in green spaces is associated with a 0.15 pg/mg decrease in hair cortisol, adjusting for SES, age, and sex. For example, an increase of 30 minutes per week would correspond to a 4.5 pg/mg reduction in cortisol levels. The model explains 7.3% of the variance in hair cortisol levels. The residual standard error is 25.16, indicating that predicted cortisol values often deviate notably from observed values. Overall, the model is statistically significant (p < 0.001).
+</div>
+
+
+```{r}
+library(patchwork)
+```
+Load the required package to combine ggplot objects.
+
+```{r}
+p1 <- ggplot(Restoration, aes(x = ndvi, y = cortisol)) +
+  geom_point(alpha = 0.3, color = "#145A32") +
+  geom_smooth(method = "lm", color = "#27AE60", fill = "#ABEBC6") +
+  labs(
+    title = "NDVI vs. Hair Cortisol",
+    x = "NDVI (Residential Greenness)",
+    y = "Hair Cortisol (pg/mg)"
+  ) +
+  theme_minimal(base_size = 10)
+```
+Create a scatterplot showing the association between NDVI and hair cortisol levels.
+
+```{r}
+p2 <- ggplot(Restoration, aes(x = green_minutes, y = cortisol)) +
+  geom_point(alpha = 0.3, color = "#2C3E50") +
+  geom_smooth(method = "lm", color = "#2980B9", fill = "#85C1E9") +
+  labs(
+    title = "Green Space Time vs. Hair Cortisol",
+    x = "Green Space Time (minutes/week)",
+    y = "Hair Cortisol (pg/mg)"
+  ) +
+  theme_minimal(base_size = 10)
+```
+Create a second scatterplot on the association between mean weekly time spent in green spaces and hair cortisol levels.
+
+```{r}
+combined_plot <- p1 + p2
+combined_plot
+```
+Combine plots for comparison using patchwork.
+
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> While both "NDVI" and "Green Space Time" are significantly associated with lower hair cortisol, "Green Space Time" shows a stronger statistical association and slightly better model fit. This suggests that while NDVI is a widely available and straightforward greenness metric, the restoration pathway likely involves direct interaction with nature. Therefore, studies should consider not only spatial availability of greenness but also the frequency and duration of individual exposure.
+</div>
+
+[**EXERCISE 3:** Instoration pathway]{style="font-size:24px; text-decoration:underline;color:green;"}
+
+This exercise examines how different greenness metrics influence health through the instoration pathway. The instoration or capacity building pathway, highlights how natural environments promote health-related behaviors by encouraging physical activity and social cohesion.
+
+Green spaces often provide a secure, accessible, and attractive setting in which
+to be physically active. In this regard, numerous studies have found positive associations between increased exposure to green environments and higher levels of physical activity (Gianfredi et al., 2021), which, in turn, is linked to improved physical (Bull et al., 2020) and mental health (Rodriguez-Ayllon et al., 2019).
+
+**DESCRIPTION**
+
+In this exercise, you will analyze generated data from 5,000 participants to examine how proximity to green spaces relates to physical activity, measured as weekly minutes using individual tracking devices. Greenness exposure is assessed using two different distance measures based on the residential address: 
+
+-   Straight-line distance to the closest green space (in meters)
+-   Network distance to the closest green space (in meters)
+
+
+```{r}
+Instoration <- read_csv("Instoration.csv")
+```
+Load the synthetic dataset titled "Instoration.csv".
+
+```{r}
+str(Instoration)
+```
+Examine the structure of the dataset. The "Instoration" dataset simulates data for 5,000 adult participants with the following variables:
+
+-   **id**: Indentification number
+-   **straight_distance**: Straight-line distance to the nearest green space (meters) based on the residence
+-   **network_distance**: Network distance to the nearest green space (meters) based on the residence
+-   **weekly_pa**: Weekly physical activity (minutes)
+-   **sex**: Sex (Female or Male)
+-   **age**: Age (years)
+-   **ses**: Socioeconomic status, (I (highest) to V (lowest))
+
+
+```{r}
+Instoration$sex <- factor(Instoration$sex, labels = c("Female", "Male"))
+Instoration$ses <- factor(Instoration$ses, labels = c("I", "II", "III", "IV", "V"))
+```
+Recode categorical variables in the "Instoration" dataset as factor.
+
+```{r}
+skim(Instoration[, c("straight_distance", "network_distance", "weekly_pa")])
+```
+Check the distribution of the exposure and outcome variables. 
+
+```{r}
+model_straight <- lm(weekly_pa ~ straight_distance + sex + age + ses, data = Instoration)
+```
+Fit a linear regression model to examine the relationship between **straight-line distance to the nearest green space** (exposure) and **weekly physical activity time** (outcome), adjusting for potential confounders (sex, age, ses). 
+
+```{r}
+summary(model_straight)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A 100-meter increase in straight-line distance to the nearest green space is associated with a 2.37-minute decrease in weekly physical activity, adjusting for sex, age, and socioeconomic status. The model explains 3.6% of the variance in weekly physical activity. The residual standard error indicates a substantial unexplained variability of around 30 minutes. Although the association is statistically significant (p < 0.001), the overall effect size is small, and the explanatory power is limited. 
+
+</div>
+
+```{r}
+model_network <- lm(weekly_pa ~ network_distance + sex + age + ses, data = Instoration)
+```
+Fit a linear regression model to examine the relationship between **network distance to the nearest green space** (exposure) and **weekly physical activity time** (outcome), adjusting for potential confounders (sex, age, ses). 
+
+```{r}
+summary(model_network)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A 100-meter increase in network distance to the nearest green space is associated with a 2.14-minute decrease in weekly physical activity, adjusting for sex, age, and socioeconomic status. The model explains 4.0% of the variance in weekly physical activity. The residual standard error indicates a substantial unexplained variability of around 30 minutes. Although the association is statistically significant (p < 0.001), the overall effect size is small, and the explanatory power is limited.
+</div>
+
+
+```{r}
+p1 <- ggplot(Instoration, aes(x = straight_distance, y = weekly_pa)) +
+  geom_point(alpha = 0.3, color = "#ff70a6") +
+  geom_smooth(method = "lm", color = "#ff0054", fill = "#F796BB") +
+  labs(
+    title = "Straight-line vs. Physical Activity",
+    x = "Straight-line Green Space (meters)",
+    y = "Physical Activity (minutes/week)"
+  ) +
+  theme_minimal(base_size = 10)
+```
+Create a scatterplot showing the association between straight-line distance to the closest green space and weekly physical activity.
+
+```{r}
+p2 <- ggplot(Instoration, aes(x = network_distance, y = weekly_pa)) +
+  geom_point(alpha = 0.3, color = "#E4B0EE") +
+  geom_smooth(method = "lm", color = "#BE39D8", fill = "#D398DF") +
+  labs(
+    title = "Network vs. Physical Activity",
+    x = "Network Green Space (meters)",
+    y = "Physical Activity (minutes/week)"
+  ) +
+  theme_minimal(base_size = 10)
+```
+Create a scatterplot showing the association between network distance to the closest green space and weekly physical activity.
+
+```{r}
+combined_plot <- p1 + p2
+combined_plot
+```
+Combine plots for comparison using patchwork.
+
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> While both "straight-line distance" and "network distance" to the nearest green space are significantly associated with lower weekly physical activity, "network distance" shows a slightly stronger statistical association (t = –14.13 vs. –13.51) and better model fit (R² = 4.0% vs. 3.6%). These results suggest that network distance offers a more realistic estimation of green space accessibility, as it is constructed based on actual routes.
+</div>
+
+[**EXERCISE 4:** Biodiversity pathway]{style="font-size:24px; text-decoration:underline;color:green;"}
+
+This exercise focuses on the biodiversity pathway. Biodiversity is a fundamental determinant of health, influencing both physical and psychological well-being. While biodiversity generally benefits human health, it also presents associated risks, including exposure to airborne allergens and volatile organic compounds that may trigger allergic reactions (Marselle et al., 2021).
+
+**DESCRIPTION**
+
+You will analyze generated data from 4,730 participants to examine how vegetation diversity is associated with allergic rhinitis symptoms (e.g., sneezing, nasal congestion, itchy eyes), measured as the total number of antihistamine pills taken per year. 
+
+Vegetation diversity is modeled as a continuous index based on the Shannon diversity index, which accounts for both abundance and evenness of the species present. The index ranges from 0 (no diversity) to approximately 2.5 (high diversity), with higher values indicating greater ecological diversity in the surrounding plant environment.
+
+```{r}
+library(readr)
+Biodiversity <- read_csv("Biodiversity.csv")
+```
+Load the synthetic dataset titled "Biodiversity.csv".
+
+```{r}
+str(Biodiversity)
+```
+Examine the structure of the dataset. The "Biodiversity" dataset simulates data for 4,730 adult participants with the following variables:
+
+-   **id**: Indentification number
+-   **veg_diversity**: Vegetation diversity based on the Shannon diversity index, estimated within a 300-meter buffer around each participant’s residence.
+-   **urbanicity**: Urbanization level (Rural, Suburban or Urban) of the neighborhood area.
+-   **allergy_med**: The total number of antihistamine pills consumed over the the past year, as a proxy of allergic rhinitis symptom burden.
+-   **sex**: Sex (Female or Male)
+-   **age**: Age (years)
+-   **ses**: Socioeconomic status (I (highest) to V (lowest))
+
+
+```{r}
+Biodiversity$urbanicity <- factor(Biodiversity$urbanicity, labels = c("Rural", "Suburban", "Urban"))
+Biodiversity$sex <- factor(Biodiversity$sex, labels = c("Female", "Male"))
+Biodiversity$ses <- factor(Biodiversity$ses, labels = c("I", "II", "III", "IV", "V"))
+```
+Recode categorical variables in the "Biodiversity" dataset as factor.
+
+```{r}
+library(skimr)
+skim(Biodiversity[, c("veg_diversity", "allergy_med")])
+```
+Check the distribution of the exposure and outcome variables. 
+
+```{r}
+model_biodiversity <- lm(allergy_med ~ veg_diversity + sex + age + ses, data = Biodiversity)
+```
+Fit a linear regression model to examine the relationship between **vegetation diversity** (exposure) and **antihistamine pills per year** (outcome), adjusting for potential confounders (sex, age, ses). 
+
+```{r}
+summary(model_biodiversity)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> A unit increase in vegetation diversity is associated with an estimated increase of 4.52 antihistamine pills per year, adjusting for sex, age, and socioeconomic status (p < 0.001). The model explains 19.3% of the variance in antihistamine use, with a residual standard error of 3.42 pills, which indicates a moderate unexplained variability. 
+
+</div>
+
+```{r}
+library(dplyr)
+library(broom)
+
+model_coefficients_urbanicity <- Biodiversity %>%
+  group_by(urbanicity) %>%
+  do(tidy(lm(allergy_med ~ veg_diversity + sex + age + ses, data = .))) %>%
+  filter(term == "veg_diversity")  
+```
+Fit the previous linear regression model, but this time stratified by **urbanization level**. This approach allows to examine whether the strength or direction of the association between vegetation diversity and allergic rhinitis symptoms varies across rural, suburban, and urban residential contexts.
+
+
+```{r}
+print(model_coefficients_urbanicity)
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br> When stratified by urbanization level, the association between vegetation diversity and antihistamine use differs in magnitude. In urban areas, a unit increase in vegetation diversity is associated with an estimated 4.47 pill increase per year (p < 0.001), after adjusting for sex, age, and socioeconomic status. In suburban areas, the increase corresponds to 1.41 pills per year (p < 0.001), while in rural areas, the association is smaller at 0.56 pills per year (p < 0.001). These results suggest that the health impact of vegetation diversity may be modified by urbanization level.
+</div>
+
+
+```{r}
+ggplot(Biodiversity, aes(x = veg_diversity, y = allergy_med, color = urbanicity)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2) +
+  scale_color_manual(
+    values = c("Rural" = "#0BDA51", "Suburban" = "#1E90FF", "Urban" = "#FF3800")  # you can change these
+  ) +
+  labs(
+    title = "Vegetation Diversity vs. Allergy Medication",
+    x = "Vegetation Diversity",
+    y = "Allergy Medication (pills/year)",
+    color = "Urbanization"
+  ) +
+  theme_minimal()
+
+```
+<div style="color: green; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal;">
+  <strong>Interpretation</strong><br>
+The relationship between urbanization and allergic symptoms (e.g.,asthma, allergic rhinitis, eczema, food allergies) has been widely studied, and epidemiological evidence consistently shows higher prevalence and severity of allergic diseases among individuals residing in urban areas when compared to those that reside in rural settings.This association may be partly attributed to reduced microbial exposure in urban environments. Urbanization has been associated to lower microbial diversity, which is considered an important factor in the development of allergic sensitization. According to the hygiene hypothesis, reduced exposure to microbes in early life limits immune system stimulation, potentially increasing the risk of allergic diseases.
+
+</div>
+
+<div style="text-align: center;">
+  <h1 style="font-size: 30px; font-weight: bold; margin-bottom: 0;">
+    End of the analysis — Thank you for joining the workshop!
+  </h1>
+  
+  
+  
+  
+</div>
+
+
+
